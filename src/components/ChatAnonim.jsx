@@ -6,69 +6,36 @@ import Swal from "sweetalert2";
 function Chat() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
-  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
   const [userIp, setUserIp] = useState("");
   const [messageCount, setMessageCount] = useState(0);
 
   const messagesEndRef = useRef(null);
-
-  // Fungsi untuk mengambil daftar IP yang diblokir dari Supabase
-  const fetchBlockedIPs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("blacklist_ips")
-        .select("ip_address");
-      if (error) throw error;
-      return data.map((row) => row.ip_address);
-    } catch (error) {
-      console.error("Gagal mengambil daftar IP yang diblokir:", error);
-      return [];
-    }
-  };
-
-  useEffect(() => {
-    // Ambil pesan awal
-    const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from("chats")
-        .select("*")
-        .order("created_at", { ascending: true });
-      if (!error) {
-        setMessages(data);
-        if (shouldScrollToBottom) scrollToBottom();
-      }
-    };
-    fetchMessages();
-
-    // Realtime subscription (menggantikan onSnapshot Firebase)
-    const channel = supabase
-      .channel("chats-realtime")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chats" },
-        (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
-          if (shouldScrollToBottom) scrollToBottom();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [shouldScrollToBottom]);
-
-  useEffect(() => {
-    getUserIp();
-    checkMessageCount();
-    scrollToBottom();
-  }, []);
 
   const scrollToBottom = () => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     }, 100);
   };
+
+  const fetchMessages = async () => {
+    const { data, error } = await supabase
+      .from("chats")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (!error) {
+      setMessages(data);
+      scrollToBottom();
+    }
+  };
+
+  useEffect(() => {
+    fetchMessages();
+    getUserIp();
+
+    // Polling setiap 5 detik (menggantikan Realtime yang error)
+    const interval = setInterval(fetchMessages, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getUserIp = async () => {
     try {
@@ -80,89 +47,73 @@ function Chat() {
       const response = await axios.get("https://ipapi.co/json");
       const newUserIp = response.data.network;
       setUserIp(newUserIp);
-      const expirationTime = new Date().getTime() + 60 * 60 * 1000;
       localStorage.setItem("userIp", newUserIp);
-      localStorage.setItem("ipExpiration", expirationTime.toString());
+      localStorage.setItem("ipExpiration", (new Date().getTime() + 60 * 60 * 1000).toString());
     } catch (error) {
-      console.error("Gagal mendapatkan alamat IP:", error);
-    }
-  };
-
-  const checkMessageCount = () => {
-    const userIpAddress = userIp;
-    const currentDateString = new Date().toDateString();
-    const storedDateString = localStorage.getItem("messageCountDate");
-    if (currentDateString === storedDateString) {
-      const userSentMessageCount =
-        parseInt(localStorage.getItem(userIpAddress)) || 0;
-      if (userSentMessageCount >= 20) {
-        Swal.fire({
-          icon: "error",
-          title: "Message limit exceeded",
-          text: "You have reached your daily message limit.",
-          customClass: { container: "sweet-alert-container" },
-        });
-      } else {
-        setMessageCount(userSentMessageCount);
-      }
-    } else {
-      localStorage.removeItem(userIpAddress);
-      localStorage.setItem("messageCountDate", currentDateString);
+      console.error("Gagal mendapatkan IP:", error);
     }
   };
 
   const isIpBlocked = async () => {
-    const blockedIPs = await fetchBlockedIPs();
-    return blockedIPs.includes(userIp);
+    try {
+      const { data } = await supabase.from("blacklist_ips").select("ip_address");
+      return data?.some((row) => row.ip_address === userIp) || false;
+    } catch {
+      return false;
+    }
   };
 
   const sendMessage = async () => {
-    if (message.trim() !== "") {
-      const isBlocked = await isIpBlocked();
-      if (isBlocked) {
-        Swal.fire({
-          icon: "error",
-          title: "Blocked",
-          text: "You are blocked from sending messages.",
-          customClass: { container: "sweet-alert-container" },
-        });
-        return;
-      }
+    if (message.trim() === "") return;
 
-      // Ambil foto profil dari Supabase Auth (jika login Google)
-      const { data: { user } } = await supabase.auth.getUser();
-      const senderImageURL = user?.user_metadata?.avatar_url || "/AnonimUser.png";
-      const trimmedMessage = message.trim().substring(0, 60);
-
-      if (messageCount >= 20) {
-        Swal.fire({
-          icon: "error",
-          title: "Message limit exceeded",
-          text: "You have reached your daily message limit.",
-          customClass: { container: "sweet-alert-container" },
-        });
-        return;
-      }
-
-      const updatedSentMessageCount = messageCount + 1;
-      localStorage.setItem(userIp, updatedSentMessageCount.toString());
-      setMessageCount(updatedSentMessageCount);
-
-      // Insert ke Supabase (menggantikan addDoc Firestore)
-      const { error } = await supabase.from("chats").insert({
-        message: trimmedMessage,
-        sender_image: senderImageURL,
-        user_ip: userIp,
+    const isBlocked = await isIpBlocked();
+    if (isBlocked) {
+      Swal.fire({
+        icon: "error",
+        title: "Blocked",
+        text: "You are blocked from sending messages.",
+        customClass: { container: "sweet-alert-container" },
       });
-
-      if (error) {
-        console.error("Gagal mengirim pesan:", error);
-        return;
-      }
-
-      setMessage("");
-      setTimeout(() => setShouldScrollToBottom(true), 100);
+      return;
     }
+
+    const currentDateString = new Date().toDateString();
+    const storedDate = localStorage.getItem("messageCountDate");
+    let count = parseInt(localStorage.getItem(userIp)) || 0;
+
+    if (storedDate !== currentDateString) {
+      count = 0;
+      localStorage.setItem("messageCountDate", currentDateString);
+    }
+
+    if (count >= 20) {
+      Swal.fire({
+        icon: "error",
+        title: "Message limit exceeded",
+        text: "You have reached your daily message limit.",
+        customClass: { container: "sweet-alert-container" },
+      });
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const senderImageURL = user?.user_metadata?.avatar_url || "/AnonimUser.png";
+    const trimmedMessage = message.trim().substring(0, 60);
+
+    const { error } = await supabase.from("chats").insert({
+      message: trimmedMessage,
+      sender_image: senderImageURL,
+      user_ip: userIp,
+    });
+
+    if (error) {
+      console.error("Gagal mengirim:", error);
+      return;
+    }
+
+    localStorage.setItem(userIp, (count + 1).toString());
+    setMessage("");
+    fetchMessages();
   };
 
   const handleKeyPress = (e) => {
