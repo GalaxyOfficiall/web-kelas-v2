@@ -5,11 +5,17 @@ import Modal from "@mui/material/Modal"
 import Typography from "@mui/material/Typography"
 import { useSpring, animated } from "@react-spring/web"
 import CloseIcon from "@mui/icons-material/Close"
+import DeleteIcon from "@mui/icons-material/Delete"
 import { supabase } from "../supabase"
 
 export default function ButtonRequest() {
 	const [open, setOpen] = useState(false)
-	const handleOpen = () => setOpen(true)
+	const [images, setImages] = useState([])
+
+	const handleOpen = () => {
+		setOpen(true)
+		fetchImagesFromSupabase()
+	}
 	const handleClose = () => setOpen(false)
 
 	const fade = useSpring({
@@ -17,9 +23,6 @@ export default function ButtonRequest() {
 		config: { duration: 200 },
 	})
 
-	const [images, setImages] = useState([])
-
-	// Menggantikan fetchImagesFromFirebase (listAll + getDownloadURL + getMetadata)
 	const fetchImagesFromSupabase = async () => {
 		try {
 			const { data, error } = await supabase.storage
@@ -35,25 +38,34 @@ export default function ButtonRequest() {
 				const { data: urlData } = supabase.storage
 					.from("images")
 					.getPublicUrl(file.name)
-
 				return {
 					url: urlData.publicUrl,
-					// created_at sudah tersedia langsung dari list()
 					timestamp: file.created_at,
+					name: file.name,
 				}
 			})
 
-			// Urutkan dari terlama (sama dengan logika Firebase sebelumnya)
 			imageData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 			setImages(imageData)
 		} catch (error) {
-			console.error("Error fetching images from Supabase Storage:", error)
+			console.error("Error fetching images:", error)
 		}
 	}
 
-	useEffect(() => {
-		fetchImagesFromSupabase()
-	}, [])
+	const deleteImage = async (fileName) => {
+		try {
+			const { error } = await supabase.storage
+				.from("images")
+				.remove([fileName])
+
+			if (error) throw error
+
+			// Hapus dari list tanpa perlu fetch ulang
+			setImages((prev) => prev.filter((img) => img.name !== fileName))
+		} catch (error) {
+			console.error("Error deleting image:", error)
+		}
+	}
 
 	return (
 		<div>
@@ -61,7 +73,7 @@ export default function ButtonRequest() {
 				onClick={handleOpen}
 				className="flex items-center space-x-2 text-white px-6 py-4"
 				id="SendRequest">
-				<img src="/Request.png" alt="Icon" className="w-6 h-6 relative bottom-1 " />
+				<img src="/Request.png" alt="Icon" className="w-6 h-6 relative bottom-1" />
 				<span className="text-base lg:text-1xl">Request</span>
 			</button>
 
@@ -82,23 +94,25 @@ export default function ButtonRequest() {
 						<Typography id="spring-modal-description" sx={{ mt: 2 }}>
 							<h6 className="text-center text-white text-2xl mb-5">Request</h6>
 							<div className="h-[22rem] overflow-y-scroll overflow-y-scroll-no-thumb">
-								{images
-									.map((imageData, index) => (
-										<div
-											key={index}
-											className="flex justify-between items-center px-5 py-2 mt-2"
-											id="LayoutIsiButtonRequest">
-											<img
-												src={imageData.url}
-												alt={`Image ${index}`}
-												className="h-10 w-10 blur-sm"
-											/>
-											<span className="ml-2 text-white">
-												{new Date(imageData.timestamp).toLocaleString()}
-											</span>
-										</div>
-									))
-									.reverse()}
+								{[...images].reverse().map((imageData, index) => (
+									<div
+										key={index}
+										className="flex justify-between items-center px-5 py-2 mt-2"
+										id="LayoutIsiButtonRequest">
+										<img
+											src={imageData.url}
+											alt={`Image ${index}`}
+											className="h-10 w-10 blur-sm"
+										/>
+										<span className="ml-2 text-white text-sm flex-1 mx-2">
+											{new Date(imageData.timestamp).toLocaleString()}
+										</span>
+										<DeleteIcon
+											style={{ cursor: "pointer", color: "red", opacity: 0.7 }}
+											onClick={() => deleteImage(imageData.name)}
+										/>
+									</div>
+								))}
 							</div>
 							<div className="text-white text-[0.7rem] mt-5">
 								Note : Jika tidak ada gambar yang sudah anda upload silahkan reload
