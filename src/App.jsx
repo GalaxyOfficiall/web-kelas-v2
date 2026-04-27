@@ -24,7 +24,7 @@ function App() {
 
 
 			<div
-				className="lg:mx-[12%] lg:mt-[-5rem] lg:mb-20 hidden lg:block"
+				className="mx-[5%] mt-5 mb-10 lg:mx-[12%] lg:mt-[-5rem] lg:mb-20"
 				id="ChatAnonim_lg"
 				data-aos="fade-up"
 				data-aos-duration="1200">
