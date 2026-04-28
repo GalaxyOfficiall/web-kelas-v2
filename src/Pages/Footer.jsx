@@ -24,11 +24,11 @@ const Footer = () => {
 										HASBI
 									</a>
 								</li>
-								/*<li>
+								{/* <li>
 									<a href="https://www.instagram.com/dafyall/?hl=id" class="hover:underline">
 										DAFYALL
 									</a>
-								</li>*/
+								</li> */}
 							</ul>
 						</div>
 						<div className="">
@@ -39,11 +39,11 @@ const Footer = () => {
 										Instagram
 									</a>
 								</li>
-								/*<li>
+								{/* <li>
 									<a href="https://www.youtube.com/@11TKJ3" class="hover:underline">
 										Youtube
 									</a>
-								</li>*/
+								</li> */}
 							</ul>
 						</div>
 						<div className="hidden md:block">
